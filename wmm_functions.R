@@ -1,3 +1,14 @@
+library(clue)
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(survival)
+library(patchwork)
+library(purrr)
+
+############################
+# Help functions
+############################
 
 diffB_onlyB = function(beta,event_vec,time_vec,latentZ_mat,j){
   sum(latentZ_mat[,j]*event_vec)/beta + 
@@ -172,5 +183,435 @@ wmm_lambda_init <-function(time_vec,event_vec,beta_vec,ratio1,ratio3){
   lambda_est2 = mean(subset_df2[,"hazard"])
   lambda_vec = c(lambda_est1,lambda_est2,lambda_est3)
   return(lambda_vec)
+}
+
+
+############################
+# Algorithm 
+############################
+
+wmm_EM <- function(df,
+                   theta,
+                   maxGEMiter = 1e+3,
+                   tol = 1e-6,verbose=FALSE
+                  ){
+  
+  pi = theta$pi
+  lambda = theta$lambda
+  beta = theta$beta
+  gamma = weibull_estep_annealed(df,theta$pi,theta$lambda,theta$beta,r=1)
+
+  N=nrow(df)
+  K=ncol(gamma)
+
+  time_vec  = df$time
+  event_vec = df$event
+
+  trace <- vector("list", length(maxGEMiter))
+  
+  bw = 0
+  for (it in 1:maxGEMiter) {
+    ### M-step ###
+    new_pi = colSums(gamma)/N
+    
+    new_beta1 = barrier_beta1(beta[1],event_vec,time_vec,gamma,bw=bw)
+    new_beta3 = barrier_beta3(beta[3],event_vec,time_vec,gamma,bw=bw)
+    new_beta2 = 1
+    new_beta = c(new_beta1,new_beta2,new_beta3)
+    
+    new_lambda = sapply(1:K , function(i)  sum(gamma[,i]*event_vec)/sum(gamma[,i]*(time_vec^new_beta[i])))
+  
+    ### organize ###
+    parameter_diff = sqrt(sum((beta-new_beta)^2))
+    beta=new_beta; pi=new_pi; lambda=new_lambda;
+
+    dQbeta1 = diffB_onlyB(beta[1],event_vec,time_vec,gamma,1)
+    dQbeta3 = diffB_onlyB(beta[3],event_vec,time_vec,gamma,3)
+    ### Stopping rule ###
+    if(parameter_diff<tol || it==maxGEMiter){
+      if(verbose) cat("EM ","[",it,"]"," beta :",beta ,"\n")
+      break
+    }
+    ### E-step ###
+    gamma = weibull_estep_annealed(df,pi,lambda,beta,r=1)
+
+    trace[[it]] <- list(pi = pi, lambda = lambda, beta = beta, dQbeta1 = dQbeta1, dQbeta3=dQbeta3)
+  }
+
+  return(list(trace = trace, lambda = lambda, beta = beta))
+}
+
+
+wmm_DAEM <- function(df,
+                     theta,
+                     maxGEMiter = 1e+3,
+                     nsteps = 50,
+                     r_init = 0.1,
+                     r_end = 1,
+                     tol=1e-6,verbose=FALSE
+                    ){
+  method = "DAEM"
+  r_grid <- exp(seq(log(r_init), log(r_end), length.out = nsteps))
+
+  pi = theta$pi
+  lambda = theta$lambda
+  beta = theta$beta
+  gamma = weibull_estep_annealed(df,theta$pi,theta$lambda,theta$beta,r=r_init)
+
+  N=nrow(df)
+  K=ncol(gamma)
+
+  time_vec  = df$time
+  event_vec = df$event
+
+  trace <- vector("list", nsteps)
+
+  bw = 0
+  for( hyperIter in 1:nsteps){
+    r =r_grid[hyperIter]
+    
+    for( gemIter in 1:maxGEMiter){
+      ### M-step ###
+      new_pi = colSums(gamma)/N
+      
+      new_beta1 = barrier_beta1(beta[1],event_vec,time_vec,gamma,bw=bw)
+      new_beta3 = barrier_beta3(beta[3],event_vec,time_vec,gamma,bw=bw)
+      new_beta2 = 1
+      new_beta = c(new_beta1,new_beta2,new_beta3)
+      
+      new_lambda = sapply(1:K , function(i)  sum(gamma[,i]*event_vec)/sum(gamma[,i]*(time_vec^new_beta[i])))
+    
+      ### organize ###
+      parameter_diff = sqrt(sum((beta-new_beta)^2))
+      beta=new_beta; pi=new_pi; lambda=new_lambda;
+
+      ### Stopping rule ###
+      if(parameter_diff<tol || gemIter==maxGEMiter){
+        
+        dQbeta1 = diffB_onlyB(beta[1],event_vec,time_vec,gamma,1)
+        dQbeta3 = diffB_onlyB(beta[3],event_vec,time_vec,gamma,3)
+        if(verbose) cat(method,"[Hpyer iter: ",hyperIter,"]","[GEM iter: ",gemIter,"]"," beta :",beta ," r:",r , " bw:",bw,"diifbeta1:",dQbeta1,"diifbeta3:",dQbeta3,"\n")
+        break
+      }
+      ### E-step ###
+      gamma = weibull_estep_annealed(df,pi,lambda,beta,r=r)
+    }
+
+    trace[[hyperIter]] <- list(bw=bw,r = r, pi = pi, lambda = lambda, beta = beta, dQbeta1 = dQbeta1, dQbeta3=dQbeta3)
+
+  }
+
+  return(list(trace = trace, pi = pi, lambda = lambda, beta = beta))
+}
+
+wmm_BM <- function(df,
+                   theta,
+                   maxGEMiter = 1e+3,
+                   nsteps = 50,
+                   bw_init = 1e-1,
+                   bw_end = 1e-5,
+                   tol=1e-6,verbose=FALSE
+                  ){
+  method="BM"         
+  bw_grid <- exp(seq(log(bw_init), log(bw_end), length.out = nsteps))
+
+  pi = theta$pi
+  lambda = theta$lambda
+  beta = theta$beta
+  gamma = weibull_estep_annealed(df,theta$pi,theta$lambda,theta$beta,r=1)
+
+  N=nrow(df)
+  K=ncol(gamma)
+
+  time_vec  = df$time
+  event_vec = df$event
+
+  trace <- vector("list", nsteps)
+
+  r=1
+
+  for( hyperIter in 1:nsteps){
+
+    bw=bw_grid[hyperIter]
+
+    for( gemIter in 1:maxGEMiter){
+      ### M-step ###
+      new_pi = colSums(gamma)/N
+      
+      new_beta1 = barrier_safe_wrapper1(beta[1],event_vec,time_vec,gamma,bw=bw)
+      new_beta3 = barrier_safe_wrapper3(beta[3],event_vec,time_vec,gamma,bw=bw)
+      new_beta2 = 1
+      new_beta = c(new_beta1,new_beta2,new_beta3)
+      
+      new_lambda = sapply(1:K , function(i)  sum(gamma[,i]*event_vec)/sum(gamma[,i]*(time_vec^new_beta[i])))
+    
+      ### organize ###
+      parameter_diff = sqrt(sum((beta-new_beta)^2))
+      beta=new_beta; pi=new_pi; lambda=new_lambda;
+
+      ### Stopping rule ###
+      if(parameter_diff<tol || gemIter==maxGEMiter){
+        
+        dQbeta1 = diffB_onlyB(beta[1],event_vec,time_vec,gamma,1)
+        dQbeta3 = diffB_onlyB(beta[3],event_vec,time_vec,gamma,3)
+        if(verbose) cat(method,"[Hpyer iter: ",hyperIter,"]","[GEM iter: ",gemIter,"]"," beta :",beta ," r:",r , " bw:",bw,"diifbeta1:",dQbeta1,"diifbeta3:",dQbeta3,"\n")
+        break
+      }
+      ### E-step ###
+      gamma = weibull_estep_annealed(df,pi,lambda,beta,r=r)
+    }
+
+    trace[[hyperIter]] <- list(bw=bw,r = r, pi = pi, lambda = lambda, beta = beta, dQbeta1 = dQbeta1, dQbeta3=dQbeta3)
+
+  }
+  return(list(trace = trace,pi = pi, lambda = lambda, beta = beta))
+}
+
+wmm_DHEM = function(df,
+                    theta,
+                    maxGEMiter=1e+3,
+                    nsteps=1e+2,
+                    r_init=0.1,
+                    r_end=1,
+                    bw_init=1e-1,
+                    bw_end=1e-5,
+                    tol=1e-6,verbose=FALSE
+  ){
+  method = "DHEM"
+  r_grid  <- exp(seq(log(r_init), log(r_end), length.out = nsteps))
+  bw_grid <- exp(seq(log(bw_init), log(bw_end), length.out = nsteps))
+
+  pi = theta$pi
+  lambda = theta$lambda
+  beta = theta$beta
+  gamma = weibull_estep_annealed(df,theta$pi,theta$lambda,theta$beta,r=r_init)
+
+  N=nrow(df)
+  K=ncol(gamma)
+
+  time_vec  = df$time
+  event_vec = df$event
+
+  trace <- vector("list", nsteps)
+
+  for( hyperIter in 1:nsteps){
+    r =r_grid[hyperIter]
+    bw=bw_grid[hyperIter]
+
+    for( gemIter in 1:maxGEMiter){
+      ### M-step ###
+      new_pi = colSums(gamma)/N
+      
+      new_beta1 = barrier_safe_wrapper1(beta[1],event_vec,time_vec,gamma,bw=bw)
+      new_beta3 = barrier_safe_wrapper3(beta[3],event_vec,time_vec,gamma,bw=bw)
+      new_beta2 = 1
+      new_beta = c(new_beta1,new_beta2,new_beta3)
+      
+      new_lambda = sapply(1:K , function(i)  sum(gamma[,i]*event_vec)/sum(gamma[,i]*(time_vec^new_beta[i])))
+    
+      ### organize ###
+      parameter_diff = sqrt(sum((beta-new_beta)^2+(pi-new_pi)^2))
+      beta=new_beta; pi=new_pi; lambda=new_lambda;
+
+      ### Stopping rule ###
+      if(parameter_diff<tol || gemIter==maxGEMiter){
+        
+        dQbeta1 = diffB_onlyB(beta[1],event_vec,time_vec,gamma,1)
+        dQbeta3 = diffB_onlyB(beta[3],event_vec,time_vec,gamma,3)
+        if(verbose) cat(method,"[Hpyer iter: ",hyperIter,"]","[GEM iter: ",gemIter,"]"," beta :",beta ," r:",r , " bw:",bw,"diifbeta1:",dQbeta1,"diifbeta3:",dQbeta3,"\n")
+        break
+      }
+      ### E-step ###
+      gamma = weibull_estep_annealed(df,pi,lambda,beta,r=r)
+    }
+
+    trace[[hyperIter]] <- list(bw=bw,r = r, pi = pi, lambda = lambda, beta = beta, dQbeta1 = dQbeta1, dQbeta3=dQbeta3)
+
+  }
+  return(list(trace = trace,pi = pi, lambda = lambda, beta = beta))
+}
+
+wmm_DHEM_adaptive <- function(df,
+                              theta,
+                              maxGEMiter=1e+3,
+                              nsteps=1e+2,
+                              r_init=0.1,
+                              r_end=1,
+                              bw_init=1e-1,
+                              eta=0.1,
+                              tol=1e-6,verbose=FALSE
+                            ){
+  method = "adapDHEM"
+  # r schedule (r -> 1)
+  r_grid <- exp(seq(log(r_init), 0, length.out = nsteps))
+
+  pi = theta$pi
+  lambda = theta$lambda
+  beta = theta$beta
+  gamma = weibull_estep_annealed(df,theta$pi,theta$lambda,theta$beta,r=r_init)
+
+  N=nrow(df)
+  K=ncol(gamma)
+
+  time_vec  = df$time
+  event_vec = df$event
+
+  trace <- vector("list", nsteps)
+
+  bw = bw_init
+  for( hyperIter in 1:nsteps){
+    r <- r_grid[hyperIter]
+    #bw = bw*0.1
+    for( gemIter in 1:maxGEMiter){
+    ### M-step ###
+    new_pi = colSums(gamma)/N
+    
+    new_beta1 = barrier_safe_wrapper1(beta[1],event_vec,time_vec,gamma,bw=bw)
+    new_beta3 = barrier_safe_wrapper3(beta[3],event_vec,time_vec,gamma,bw=bw)
+    new_beta2 = 1
+    new_beta = c(new_beta1,new_beta2,new_beta3)
+    
+    new_lambda = sapply(1:K , function(i)  sum(gamma[,i]*event_vec)/sum(gamma[,i]*(time_vec^new_beta[i])))
+  
+    theta0 = list(pi=pi,beta=beta,lambda=lambda)
+    theta1 = list(pi=new_pi,beta=new_beta,lambda=new_lambda)
+
+    # Checking ACC
+    acc1 = FALSE;acc2 = FALSE;
+    deltaDKL = wmm_delta_DKL(df,theta0,theta1,r)
+    DKL      = wmm_DKL(df,theta0,theta1)
+    deltaB   = wmm_bar_diff(theta1,theta0)
+    #cat(deltaDKL-bw*wmm_bar_diff(theta1,theta0),"\n")
+    if(deltaDKL-bw*deltaB<0){
+      # Acc 1st test      
+      if(!is.finite(deltaDKL)||!is.finite(DKL)||DKL<0) break
+      if(deltaDKL<eta*DKL) {
+        #cat(deltaDKL,eta*DKL,"\n")
+        break}else{acc1=TRUE}
+      # Acc 2nd test
+      if(bw*abs(deltaB)>eta*DKL){
+        bw = min(bw,eta*DKL/abs(deltaB))
+        next
+      }else{acc2 = TRUE}
+    }else{
+      acc1=TRUE;acc2=TRUE;
+    }
+    ### organize ###
+    parameter_diff = sqrt(sum((beta-new_beta)^2))
+    #print(parameter_diff)
+    beta=new_beta; pi=new_pi; lambda=new_lambda;
+    dQbeta1 = diffB_onlyB(beta[1],event_vec,time_vec,gamma,1)
+    dQbeta3 = diffB_onlyB(beta[3],event_vec,time_vec,gamma,3)
+     
+    ### E-step ###
+    gamma = weibull_estep_annealed(df,pi,lambda,beta,r=r)
+    ### Stopping rule ###
+    if(parameter_diff<tol || gemIter==maxGEMiter){
+      if(verbose) cat(method,"[Hpyer iter: ",hyperIter,"]","[GEM iter: ",gemIter,"]"," beta :",beta ," r:",r , " bw:",bw,"diifbeta1:",dQbeta1,"diifbeta3:",dQbeta3," para diff: ", parameter_diff,"\n")
+      break
+    }
+    }
+
+    if(acc1&&acc2){
+      trace[[hyperIter]] <- list(bw=bw,r = r, pi = pi, lambda = lambda, beta = beta, dQbeta1 = dQbeta1, dQbeta3=dQbeta3)
+      last_acc = list(bw=bw,r = r, pi = pi, lambda = lambda, beta = beta, dQbeta1 = dQbeta1, dQbeta3=dQbeta3)
+    }
+  }
+
+  return(list(trace = trace,pi = last_acc$pi, lambda = last_acc$lambda, beta = last_acc$beta,bw=last_acc$bw,dQbeta1 = last_acc$dQbeta1, dQbeta3=last_acc$dQbeta3))
+}
+
+make_result_df <- function(fit, method, K = 3) {
+  non_null_idx  <- which(!sapply(fit$trace, is.null))
+  valid_traces  <- fit$trace[non_null_idx]
+
+  data.frame(
+    method  = method,
+    r       = sapply(valid_traces, function(x) if (!is.null(x$r))  x$r  else 1),
+    bw      = sapply(valid_traces, function(x) if (!is.null(x$bw)) x$bw else 0),
+    pi1     = sapply(valid_traces, function(x) x$pi[1]),
+    pi2     = sapply(valid_traces, function(x) x$pi[2]),
+    pi3     = sapply(valid_traces, function(x) x$pi[3]),
+    beta1   = sapply(valid_traces, function(x) x$beta[1]),
+    beta2   = sapply(valid_traces, function(x) x$beta[2]),
+    beta3   = sapply(valid_traces, function(x) x$beta[3]),
+    lambda1 = sapply(valid_traces, function(x) x$lambda[1]),
+    lambda2 = sapply(valid_traces, function(x) x$lambda[2]),
+    lambda3 = sapply(valid_traces, function(x) x$lambda[3]),
+    dQbeta1 = sapply(valid_traces, function(x) if (length(x$dQbeta1) == 1) x$dQbeta1 else NA_real_),
+    dQbeta3 = sapply(valid_traces, function(x) if (length(x$dQbeta3) == 1) x$dQbeta3 else NA_real_)
+  )
+}
+
+plot_beta_trace <- function(df, title = NULL,
+                            axis_text_y_size  = 14,
+                            axis_title_y_size = 20,
+                            axis_text_x_size  = 14,
+                            axis_title_x_size = 14,
+                            title_size        = 30
+                          ) {
+
+  base_theme <- theme_bw() +
+    theme(
+      axis.text.y  = element_text(size = axis_text_y_size),
+      axis.title.y = element_text(size = axis_title_y_size,
+      angle = 0),
+      axis.text.x  = element_text(size = axis_text_x_size),
+      axis.title.x = element_text(size = axis_title_x_size)
+    )
+
+  p1 <- ggplot(df, aes(x = r, y = beta1)) +
+    geom_line() +
+    coord_cartesian(ylim = c(0, 1), xlim = c(r_init, 1)) +
+    labs(x = "Annealing parameter", y = expression(beta[1])) +
+    base_theme
+
+  p3 <- ggplot(df, aes(x = r, y = beta3)) +
+    geom_line() +
+    coord_cartesian(xlim = c(r_init, 1)) +
+    labs(x = "Annealing parameter", y = expression(beta[3])) +
+    base_theme
+
+  (p1 / p3) + plot_annotation(title = title) &
+    theme(plot.title = element_text(size = title_size))
+}
+
+
+plot_dQbeta_trace <- function(df, title = NULL,
+                              axis_text_y_size  = 14,
+                              axis_title_y_size = 20,
+                              axis_text_x_size  = 14,
+                              axis_title_x_size = 14,
+                              title_size        = 20
+                            ) {
+
+  base_theme <- theme_bw() +
+    theme(
+      axis.text.y  = element_text(size = axis_text_y_size),
+      axis.title.y = element_text(size = axis_title_y_size,angle =0),
+      axis.text.x  = element_text(size = axis_text_x_size),
+      axis.title.x = element_text(size = axis_title_x_size)
+    )
+
+  p1 <- ggplot(df, aes(x = r, y = dQbeta1)) +
+    geom_line() +
+    coord_cartesian(xlim = c(r_init, 1))+
+    labs(x = "Annealing parameter", y = expression(nabla~Q~beta[1])) +
+    base_theme
+
+  p3 <- ggplot(df, aes(x = r, y = dQbeta3)) +
+    geom_line() +
+    coord_cartesian(xlim = c(r_init, 1))+
+    labs(x = "Annealing parameter", y = expression(nabla~Q~beta[3])) +
+    base_theme
+
+  (p1 / p3) + plot_annotation(title = title) &
+    theme(plot.title = element_text(size = title_size))
+}
+
+
+best_row <- function(df) {
+  idx <- which.min(abs(df$dQbeta1) + abs(df$dQbeta3))
+  df[idx, c("method","pi1","pi2","pi3","beta1","beta3","lambda1","lambda2","lambda3","dQbeta1","dQbeta3")]
 }
 
