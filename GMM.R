@@ -49,8 +49,8 @@ theta_true = theta_true
 tol_limit = 1e-6
 r_init = 0.1
 n_steps = 200
-bw_init = 1e-1
-bw_end = 1e-3
+bw_init = 1
+bw_end = 1e-5
 delta =  10 #10 #200
 max_iter= 1000
 eta = 0.02
@@ -60,27 +60,27 @@ eta = 0.02
 ## ------------------------------------------------------------
 
 
-M=100
-sim_list <- lapply(seq_len(M), function(m) {
-  if (m == 1 || m %% 10 == 0) message(sprintf("Simulation %d/%d (%.1f%%)", m, M, 100*m/M))
-  one_sim_summary(simulation_num = m, n = n, K = K, theta_true = theta_true,tol_limit=tol_limit,
-                  r_init=r_init,n_steps=n_steps,bw_init=bw_init,bw_end=bw_end,delta=delta,
-                  max_iter=max_iter,eta=eta)
-})
-sim_all <- do.call(rbind, sim_list)
+# M=100
+# sim_list <- lapply(seq_len(M), function(m) {
+#   if (m == 1 || m %% 10 == 0) message(sprintf("Simulation %d/%d (%.1f%%)", m, M, 100*m/M))
+#   one_sim_summary(simulation_num = m, n = n, K = K, theta_true = theta_true,tol_limit=tol_limit,
+#                   r_init=r_init,n_steps=n_steps,bw_init=bw_init,bw_end=bw_end,delta=delta,
+#                   max_iter=max_iter,eta=eta)
+# })
+# sim_all <- do.call(rbind, sim_list)
 
 
 ## ------------------------------------------------------------
-## Simulation M 
+## Parallel Simulation M 
 ## ------------------------------------------------------------
 
 library(foreach)
 library(doParallel)
 
-n_cores <- detectCores() - 3
+n_cores <- floor(detectCores()/2)
 registerDoParallel(cores = n_cores)
-
 M=100
+t_start <- proc.time()
 sim_list <- foreach(m = seq_len(M), .packages = c("clue", "dplyr", "tidyr")) %dopar% {
   source("gmm_functions.R")
   result <- one_sim_summary(simulation_num = m, n = n, K = K, theta_true = theta_true,
@@ -92,13 +92,13 @@ sim_list <- foreach(m = seq_len(M), .packages = c("clue", "dplyr", "tidyr")) %do
 }
 
 stopImplicitCluster()
+t_end <- proc.time()
+message(sprintf("Elapsed: %.1f sec", (t_end - t_start)["elapsed"]))
 sim_all <- do.call(rbind, sim_list)
-
 
 
 #########
 
-library(dplyr)
 
 err_summary <- sim_all %>%
   filter(!is.na(err)) %>%        # 실패(run) 제거
