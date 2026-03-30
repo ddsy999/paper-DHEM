@@ -70,6 +70,32 @@ sim_list <- lapply(seq_len(M), function(m) {
 sim_all <- do.call(rbind, sim_list)
 
 
+## ------------------------------------------------------------
+## Simulation M 
+## ------------------------------------------------------------
+
+library(foreach)
+library(doParallel)
+
+n_cores <- detectCores() - 3
+registerDoParallel(cores = n_cores)
+
+M=100
+sim_list <- foreach(m = seq_len(M), .packages = c("clue", "dplyr", "tidyr")) %dopar% {
+  source("gmm_functions.R")
+  result <- one_sim_summary(simulation_num = m, n = n, K = K, theta_true = theta_true,
+                  tol_limit = tol_limit, r_init = r_init, n_steps = n_steps,
+                  bw_init = bw_init, bw_end = bw_end, delta = delta,
+                  max_iter = max_iter, eta = eta)
+  cat(sprintf("Done %d/%d\n", m, M), file = "progress.log", append = TRUE)
+  result
+}
+
+stopImplicitCluster()
+sim_all <- do.call(rbind, sim_list)
+
+
+
 #########
 
 library(dplyr)
