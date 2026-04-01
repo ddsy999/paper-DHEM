@@ -92,7 +92,7 @@ gmm_init <- function(x, K,
     for (t in 1:max_tries) {
       cand <- rmvnorm_one(xbar, Sig_mu)
       # Euclidean distance criterion: at least delta away from all previous mu's
-      if (all(sapply(1:(k - 1), function(j) sqrt(sum((cand - mu_list[[j]])^2)) >= delta))) {
+      if (all(sapply(1:(k - 1), function(j) sum((cand - mu_list[[j]])^2) >= delta/10))) {
         mu_list[[k]] <- cand
         ok <- TRUE
         break
@@ -104,6 +104,8 @@ gmm_init <- function(x, K,
   
   list(pi = pi, mu = mu_list, Sigma = Sigma_list)
 }
+
+
 make_data_and_init <- function(n, K, theta_true, delta,seed=sample.int(1e9, 1)) {
   set.seed(seed)
   # cat("--- ",theta_true)

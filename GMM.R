@@ -17,7 +17,7 @@ theta_true <- list(
 
 theta_true <- list(
   pi = c(0.2,0.3,0.5),
-  mu = list(c(1,1,2), c(5,3,0.5), c(2,6,5)),
+  mu = list(c(-1,1,2), c(1,1,0.5), c(2,0,-2)),
   Sigma = list(
     # diag = (1, 1, 1)
     matrix(c(
@@ -48,12 +48,12 @@ K=3
 theta_true = theta_true
 tol_limit = 1e-6
 r_init = 0.1
-n_steps = 200
-bw_init = 1
-bw_end = 1e-5
-delta =  10 #10 #200
+n_steps = 100
+bw_init = 1e-1
+bw_end = 1e-10
+delta =  1 #10 #200
 max_iter= 1000
-eta = 0.02
+eta = 0.5
 
 ## ------------------------------------------------------------
 ## Simulation M 
@@ -76,8 +76,8 @@ eta = 0.02
 
 library(parallel)
 
-n_cores <- detectCores()-10
-M=100
+n_cores <- detectCores()-5
+M = 100
 cl <- makeCluster(n_cores)
 clusterExport(cl, c("n", "K", "theta_true", "tol_limit", "r_init",
                     "n_steps", "bw_init", "bw_end", "delta", "max_iter", "eta", "M"))
@@ -149,10 +149,6 @@ ggplot(sim_all %>% filter(!is.na(err)),
 
 
 
-
-sim_all[which(sim_all[,"succ"]==0),]
-
-
 success_table <- sim_all %>%
   group_by(method) %>%
   summarise(
@@ -165,3 +161,38 @@ success_table <- sim_all %>%
 
 success_table
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+dk2_mu <- function(k, mu, Sigma) {
+  K <- length(mu)
+  mu_k <- as.numeric(mu[[k]])
+  Sig_k <- Sigma[[k]]
+  
+  Rk <- chol(Sig_k)
+  val <- 0
+  
+  for (l in seq_len(K)) {
+    if (l == k) next
+    
+    diff <- mu_k - as.numeric(mu[[l]])
+    y <- backsolve(Rk, diff, transpose = TRUE)
+    val <- val + sum(y^2)
+  }
+  
+  val
+}
+sapply(1:3, function(k) dk2_mu(k, theta_true$mu, theta_true$Sigma))
