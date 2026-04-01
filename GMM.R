@@ -74,26 +74,24 @@ eta = 0.02
 ## Parallel Simulation M 
 ## ------------------------------------------------------------
 
-library(foreach)
-library(doParallel)
+library(parallel)
 
-n_cores <- floor(detectCores()/2)
-registerDoParallel(cores = n_cores)
+n_cores <- detectCores()-10
 M=100
-t_start <- proc.time()
-sim_list <- foreach(m = seq_len(M), .packages = c("clue", "dplyr", "tidyr")) %dopar% {
-  source("gmm_functions.R")
+cl <- makeCluster(n_cores)
+clusterExport(cl, c("n", "K", "theta_true", "tol_limit", "r_init",
+                    "n_steps", "bw_init", "bw_end", "delta", "max_iter", "eta", "M"))
+clusterEvalQ(cl, { source("gmm_functions.R"); library(clue); library(dplyr); library(tidyr) })
+sim_list <- parLapply(cl, seq_len(M), function(m) {
   result <- one_sim_summary(simulation_num = m, n = n, K = K, theta_true = theta_true,
                   tol_limit = tol_limit, r_init = r_init, n_steps = n_steps,
                   bw_init = bw_init, bw_end = bw_end, delta = delta,
                   max_iter = max_iter, eta = eta)
   cat(sprintf("Done %d/%d\n", m, M), file = "progress.log", append = TRUE)
   result
-}
+})
 
-stopImplicitCluster()
-t_end <- proc.time()
-message(sprintf("Elapsed: %.1f sec", (t_end - t_start)["elapsed"]))
+stopCluster(cl)
 sim_all <- do.call(rbind, sim_list)
 
 
