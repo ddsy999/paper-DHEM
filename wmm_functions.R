@@ -545,10 +545,10 @@ make_result_df <- function(fit, method, K = 3) {
 
 plot_beta_trace <- function(df, title = NULL,
                             axis_text_y_size  = 14,
-                            axis_title_y_size = 20,
+                            axis_title_y_size = 14,
                             axis_text_x_size  = 14,
                             axis_title_x_size = 14,
-                            title_size        = 30
+                            title_size        = 20
                           ) {
 
   base_theme <- theme_bw() +
@@ -579,7 +579,7 @@ plot_beta_trace <- function(df, title = NULL,
 
 plot_dQbeta_trace <- function(df, title = NULL,
                               axis_text_y_size  = 14,
-                              axis_title_y_size = 20,
+                              axis_title_y_size = 14,
                               axis_text_x_size  = 14,
                               axis_title_x_size = 14,
                               title_size        = 20
@@ -613,5 +613,109 @@ plot_dQbeta_trace <- function(df, title = NULL,
 best_row <- function(df) {
   idx <- which.min(abs(df$dQbeta1) + abs(df$dQbeta3))
   df[idx, c("method","pi1","pi2","pi3","beta1","beta3","lambda1","lambda2","lambda3","dQbeta1","dQbeta3")]
+}
+
+
+plot_beta_trace_barrier <- function(df, title = NULL,
+                            axis_text_y_size  = 14,
+                            axis_title_y_size = 14,
+                            axis_text_x_size  = 10,
+                            axis_title_x_size = 14,
+                            title_size        = 20
+                          ) {
+
+  base_theme <- theme_bw() +
+    theme(
+      axis.text.y  = element_text(size = axis_text_y_size),
+      axis.title.y = element_text(size = axis_title_y_size,
+      angle = 0),
+      axis.text.x  = element_text(size = axis_text_x_size),
+      axis.title.x = element_text(size = axis_title_x_size)
+    )
+
+  p1 <- ggplot(df, aes(x = bw, y = beta1)) +
+    geom_line() +
+    scale_x_continuous(
+  trans = scales::trans_new(
+    name = "revlog10",
+    transform = function(x) -log10(x),
+    inverse   = function(x) 10^(-x)
+  ),
+  breaks = scales::log_breaks(base = 10)(c(1e-8, 1)),
+  labels = scales::label_math(10^.x),
+  limits = c(1e-8, 1)
+)+
+    labs(x = "Barrier parameter", y = expression(beta[1])) +
+    base_theme
+
+  p3 <- ggplot(df, aes(x = bw, y = beta3)) +
+    geom_line() +
+    scale_x_continuous(
+  trans = scales::trans_new(
+    name = "revlog10",
+    transform = function(x) -log10(x),
+    inverse   = function(x) 10^(-x)
+  ),
+  breaks = scales::log_breaks(base = 10)(c(1e-8, 1)),
+  labels = scales::label_math(10^.x),
+  limits = c(1e-8, 1)
+)+
+    labs(x = "Barrier parameter", y = expression(beta[3])) +
+    base_theme
+
+  (p1 / p3) + plot_annotation(title = title) &
+    theme(plot.title = element_text(size = title_size))
+}
+
+
+plot_dQbeta_trace_barrier <- function(df, title = NULL,
+                              axis_text_y_size  = 14,
+                              axis_title_y_size = 14,
+                              axis_text_x_size  = 10,
+                              axis_title_x_size = 14,
+                              title_size        = 20
+                            ) {
+
+  base_theme <- theme_bw() +
+    theme(
+      axis.text.y  = element_text(size = axis_text_y_size),
+      axis.title.y = element_text(size = axis_title_y_size,angle =0),
+      axis.text.x  = element_text(size = axis_text_x_size),
+      axis.title.x = element_text(size = axis_title_x_size)
+    )
+
+  p1 <- ggplot(df, aes(x = bw, y = dQbeta1)) +
+    geom_line() +
+    # scale_x_reverse() +
+    scale_x_continuous(
+  trans = scales::trans_new(
+    name = "revlog10",
+    transform = function(x) -log10(x),
+    inverse   = function(x) 10^(-x)
+  ),
+  breaks = scales::log_breaks(base = 10)(c(1e-8, 1)),
+  labels = scales::label_math(10^.x),
+  limits = c(1e-8, 1)
+)+
+    labs(x = "Barrier parameter", y = expression(nabla~Q~beta[1])) +
+    base_theme
+
+  p3 <- ggplot(df, aes(x = bw, y = dQbeta3)) +
+    geom_line() +
+    scale_x_continuous(
+  trans = scales::trans_new(
+    name = "revlog10",
+    transform = function(x) -log10(x),
+    inverse   = function(x) 10^(-x)
+  ),
+  breaks = scales::log_breaks(base = 10)(c(1e-8, 1)),
+  labels = scales::label_math(10^.x),
+  limits = c(1e-8, 1)
+)+
+    labs(x = "Barrier parameter", y = expression(nabla~Q~beta[3])) +
+    base_theme
+
+  (p1 / p3) + plot_annotation(title = title) &
+    theme(plot.title = element_text(size = title_size))
 }
 
