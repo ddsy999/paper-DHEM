@@ -1,4 +1,4 @@
-source("ZIP_functions.R")
+source("zip_functions.R")
 
 
 
