@@ -1140,6 +1140,56 @@ compute_err3 <- function(theta_hat, theta_true) {
   c(pi = pi_abs, mu = mu_L2, Sigma = Sigma_F)
 }
 
+
+gmm_bw_init_mu <- function(x, theta_init, r_init = 1, delta = 0.1,
+                           tau = 0.05, eps = 1e-12,
+                           norm_type = c("l2", "linf")) {
+  norm_type <- match.arg(norm_type)
+  
+  x <- as.matrix(x)
+  theta <- theta_init
+  latent <- gmm_estep_annealed(x, theta, r = r_init)
+  
+  K <- length(theta$mu)
+  vals <- numeric(K)
+  
+  vec_norm <- function(v) {
+    if (norm_type == "l2") sqrt(sum(v^2)) else max(abs(v))
+  }
+  
+  for (k in seq_len(K)) {
+    w  <- latent[, k]
+    Nk <- sum(w)
+    sk <- colSums(x * w)
+    mk <- as.numeric(theta$mu[[k]])
+    
+    gQk <- sk - Nk * mk
+    
+    mu_others <- theta$mu[-k]
+    uk <- Reduce(`+`, lapply(mu_others, function(ml) mk - as.numeric(ml)))
+    
+    Sig_k <- theta$Sigma[[k]]
+    Rk <- chol(Sig_k)
+    
+    Dk <- 0
+    for (ml in mu_others) {
+      diff <- mk - as.numeric(ml)
+      y <- backsolve(Rk, diff, transpose = TRUE)
+      Dk <- Dk + sum(y^2)
+    }
+    Dk <- Dk - delta
+    
+    if (!is.finite(Dk) || Dk <= 0) {
+      vals[k] <- 0
+      next
+    }
+    
+    vals[k] <- (tau / 2) * vec_norm(gQk) * Dk / (vec_norm(uk) + eps)
+  }
+  
+  min(vals)
+}
+
 ## -----------------------------
 ## one simulation summary (requested format)
 ## -----------------------------
@@ -1160,6 +1210,19 @@ one_sim_summary <- function(simulation_num = 1,
   tmp <- make_data_and_init(n, K, theta_true, delta)
   x <- tmp$x
   theta0 <- tmp$theta_init
+
+
+  # barrier initial (mu)
+  bw_init_mu <- gmm_bw_init_mu(
+    x = x,
+    theta_init = theta0,
+    r_init = r_init,
+    delta = delta,
+    tau = 0.01,        # 핵심 tuning
+    norm_type = "l2"
+  )
+  
+  bw_init = bw_init_mu
   
   # safe wrapper: return NULL if error occurs
   safe_run <- function(expr) tryCatch(expr, error = function(e) NULL)

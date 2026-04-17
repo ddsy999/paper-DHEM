@@ -719,3 +719,18 @@ plot_dQbeta_trace_barrier <- function(df, title = NULL,
     theme(plot.title = element_text(size = title_size))
 }
 
+wmm_bw_init_beta <- function(df, pi_init, lambda_init, beta_init, r_init,
+                             tau = 0.1) {
+  z_annealed <- weibull_estep_annealed(
+    df, pi_init, lambda_init, beta_init, r_init
+  )
+  
+  g1 <- diffB_onlyB(beta_init[1], df$event, df$time, z_annealed, j = 1)
+  g3 <- diffB_onlyB(beta_init[3], df$event, df$time, z_annealed, j = 3)
+  
+  bw1 <- tau * abs(g1) * min(beta_init[1], 1 - beta_init[1])
+  bw3 <- tau * abs(g3) * (beta_init[3] - 1)
+  
+  min(bw1, bw3)
+}
+

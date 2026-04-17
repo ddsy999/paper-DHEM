@@ -17,15 +17,16 @@ theta_init_value = list(pi = pi_init_value, lambda = lambda_init_value)
 r_init_value = 0.1
 p_min_value = 0.5
 n_step_value = 100
-bw_init_value = 1e+1
 bw_end_value = 1e-5
+
+bw_init_value = zip_bw_init_pi(x,pi_init_value,lambda_init_value,r_init_value,p_min_value,tau=0.1)
 
 ## Simulation 
 
 # ----------------------------
 # Simulation
 # ----------------------------
-M <- 100
+M <- 100 #200
 sim_df <- data.frame(
   simulationNum = integer(0),
   method        = character(0),
@@ -34,7 +35,6 @@ sim_df <- data.frame(
   stringsAsFactors = FALSE
 )
 
-M=100
 t0 <- Sys.time()
 sim_df <- data.frame()
 
@@ -52,7 +52,7 @@ for (i in 1:M) {
   
 n <- 1e+4
 pi_true  <- 0.99
-lambda_true <- 0.3
+lambda_true <- 0.4
 x <- rzip(n, pi = pi_true, lambda = lambda_true)
 
 pi_init_value = 0.7
@@ -61,9 +61,11 @@ theta_init_value = list(pi = pi_init_value, lambda = lambda_init_value)
 # lambda_init = compute_lambda_init(x,pi_init_value)
 r_init_value = 0.1
 p_min_value = 0.5
-n_step_value = 200
-bw_init_value = 1e-1
-bw_end_value = 1e-5
+n_step_value = 100
+#bw_init_value = 1e-1 
+bw_init_value = min(zip_bw_init_pi(x,pi_init_value,lambda_init_value,r_init_value,p_min_value,tau=0.1))
+
+bw_end_value = 1e-8
   
   ## helper: 실패해도 loop 계속 + succ 생성
   safe_fit <- function(expr) {
@@ -261,7 +263,7 @@ strip.text = element_text(size = 16))
 
 
 
-M <- 200  # 원하는 반복 횟수
+M <- 100  # 원하는 반복 횟수
 
 em_list <- vector("list", M)
 
@@ -305,13 +307,13 @@ p_lam <- ggplot(em_df, aes(x = 1, y = lambda_hat)) +
 (p_pi | p_lam) +
   plot_annotation(
     title = sprintf("ZIP- standard EM estimates over %d simulations", M),
-        subtitle = sprintf("n=%d, true π=%.3f, true λ=%.3f ",
+        subtitle = sprintf("n=%d, true π=%.3f, true λ=%.4f ",
                        n, pi_true, lambda_true))
 
 
 ###############
 
-M <- 200
+M <- 100
 adap_list <- vector("list", M)
 
 for (m in seq_len(M)) {
@@ -370,7 +372,7 @@ p_lam <- ggplot(adap_df, aes(x = 1, y = lambda_hat)) +
 (p_pi | p_lam) +
   plot_annotation(
     title = sprintf("ZIP - Adaptive DHEM estimates over %d simulations", M),
-    subtitle = sprintf("n=%d, true π=%.3f, true λ=%.3f ",
+    subtitle = sprintf("n=%d, true π=%.3f, true λ=%.4f ",
                        n, pi_true, lambda_true)
   )
 

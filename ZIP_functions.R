@@ -651,3 +651,30 @@ zip_adaptive_dhem <- function(x,
 }
 
 
+zip_diff <- function(x, pi, lambda, r = 1) {
+  pi <- as.numeric(pi)[1]
+  lambda <- as.numeric(lambda)[1]
+  x <- as.numeric(x)
+
+  gamma <- zip_estep_annealed(x, pi = pi, lambda = lambda, r = r)
+  
+  A <- sum(1 - gamma)
+  B <- sum(gamma)
+  
+  A / pi - B / (1 - pi)
+}
+
+zip_bw_init_pi <- function(x, pi_init, lambda_init,
+                           r_init = 1,
+                           p_min = 0.005,
+                           tau = 0.01) {
+  pi_init <- as.numeric(pi_init)[1]
+  lambda_init <- as.numeric(lambda_init)[1]
+  x <- as.numeric(x)
+  
+  
+  bw_raw <- tau * abs(zip_diff(x, pi_init, lambda_init, r = r_init)) *
+    (pi_init - p_min)
+  
+  bw_raw
+}

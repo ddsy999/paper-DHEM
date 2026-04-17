@@ -16,7 +16,7 @@ maxGEMiter = 1e+6
 nsteps     <- 100
 r_init     <- 0.1
 r_end      <- 1
-bw_init    <- 1e-1
+#bw_init    <- 1e-1
 bw_end     <- 1e-8   # 필요시 조정
 eta        <- 0.1           # adaptive DHEM 전용
 errtol     = 1e-10
@@ -30,6 +30,22 @@ pi_init   <- rep(1 / K, K)
 beta_init <- c(0.5, 1, 2)   
 lambda_init <- wmm_lambda_init(df$time,df$event, beta_init,ratio1=0.3,ratio3=0.7)
 theta_init = list(beta=beta_init,pi=pi_init,lambda=lambda_init)
+
+
+#### ---------------------------------------------------------------------------
+# Init barrier-parameter
+#### ---------------------------------------------------------------------------
+
+bw_init_wmm <- wmm_bw_init_beta(
+  df = df,
+  pi_init = pi_init,
+  lambda_init = lambda_init,
+  beta_init = beta_init,
+  r_init = r_init,
+  tau = 0.1
+)
+
+bw_init=bw_init_wmm
 
 #### ---------------------------------------------------------------------------
 # Train (one run each)
@@ -94,3 +110,6 @@ tail(df_BM)
 ))
 
 
+
+df_DHEM[which.min(abs(df_DHEM$dQbeta1) + abs(df_DHEM$dQbeta3)), ]
+df_adapDHEM |> tail(1)
